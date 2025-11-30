@@ -31,9 +31,11 @@ use alloc::string::String;
 use const_field_offset::FieldOffsets;
 use core::cell::Cell;
 use core::pin::Pin;
+use core::time::Duration;
 #[allow(unused)]
 use euclid::num::Ceil;
 use i_slint_core_macros::*;
+use std::time::Instant;
 use unicode_segmentation::UnicodeSegmentation;
 
 /// The implementation of the `Text` element
@@ -746,6 +748,8 @@ pub struct TextInput {
     pressed: Cell<u8>,
     undo_items: Cell<SharedVector<UndoItem>>,
     redo_items: Cell<SharedVector<UndoItem>>,
+
+    last_mouse_moved: Cell<Option<Instant>>,
 }
 
 impl Item for TextInput {
@@ -876,13 +880,24 @@ impl Item for TextInput {
                     x.set_mouse_cursor(super::MouseCursor::Text);
                 }
                 let pressed = self.as_ref().pressed.get();
+
                 if pressed > 0 {
+                    let now = Instant::now();
+                    if let Some(last_event) = self.last_mouse_moved.get()
+                        && now - last_event < Duration::from_millis(16)
+                    {
+                        return InputEventResult::GrabMouse;
+                    }
+
+                    self.last_mouse_moved.set(Some(now));
+
                     let clicked_offset =
                         self.byte_offset_for_position(*position, window_adapter, self_rc) as i32;
+
                     self.set_cursor_position(
                         clicked_offset,
                         true,
-                        if (pressed - 1) % 3 == 0 {
+                        if (pressed - 1).is_multiple_of(3) {
                             TextChangeNotify::TriggerCallbacks
                         } else {
                             TextChangeNotify::SkipCallbacks
@@ -897,6 +912,8 @@ impl Item for TextInput {
                         _ => unreachable!(),
                     }
                     return InputEventResult::GrabMouse;
+                } else {
+                    self.last_mouse_moved.set(None);
                 }
             }
             _ => return InputEventResult::EventIgnored,
