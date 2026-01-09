@@ -22,9 +22,6 @@ pub unsafe fn make_vulkan_surface(
             wgpu::TextureFormat::Rgba8Unorm => {
                 (skia_safe::gpu::vk::Format::R8G8B8A8_UNORM, skia_safe::ColorType::RGBA8888)
             }
-            wgpu::TextureFormat::Rgba8UnormSrgb => {
-                (skia_safe::gpu::vk::Format::R8G8B8A8_SRGB, skia_safe::ColorType::SRGBA8888)
-            }
             wgpu::TextureFormat::Bgra8Unorm => {
                 (skia_safe::gpu::vk::Format::B8G8R8A8_UNORM, skia_safe::ColorType::BGRA8888)
             }
@@ -121,45 +118,44 @@ pub unsafe fn make_vulkan_context(
     queue: &wgpu::Queue,
 ) -> Option<skia_safe::gpu::DirectContext> {
     unsafe {
-        let maybe_vulkan_device = device.as_hal::<wgpu::wgc::api::Vulkan>();
-        let maybe_vulkan_queue = queue.as_hal::<wgpu::wgc::api::Vulkan>();
+        let vulkan_device = device.as_hal::<wgpu::wgc::api::Vulkan>()?;
+        let vulkan_queue = queue.as_hal::<wgpu::wgc::api::Vulkan>()?;
 
-        maybe_vulkan_device.and_then(|vulkan_device| {
-            maybe_vulkan_queue.map(|vulkan_queue| {
-                let vulkan_queue_raw = vulkan_queue.as_raw();
+        let vulkan_queue_raw = vulkan_queue.as_raw();
 
-                let get_proc = |of| {
-                    let result = match of {
-                        skia_safe::gpu::vk::GetProcOf::Instance(instance, name) => {
-                            vulkan_device.shared_instance().entry().get_instance_proc_addr(
-                                ash::vk::Instance::from_raw(instance as _),
-                                name,
-                            )
-                        }
-                        skia_safe::gpu::vk::GetProcOf::Device(device, name) => vulkan_device
-                            .shared_instance()
-                            .raw_instance()
-                            .get_device_proc_addr(ash::vk::Device::from_raw(device as _), name),
-                    };
+        let get_proc = |of| {
+            let result = match of {
+                skia_safe::gpu::vk::GetProcOf::Instance(instance, name) => vulkan_device
+                    .shared_instance()
+                    .entry()
+                    .get_instance_proc_addr(ash::vk::Instance::from_raw(instance as _), name),
+                skia_safe::gpu::vk::GetProcOf::Device(device, name) => vulkan_device
+                    .shared_instance()
+                    .raw_instance()
+                    .get_device_proc_addr(ash::vk::Device::from_raw(device as _), name),
+            };
 
-                    match result {
-                        Some(f) => f as _,
-                        None => {
-                            //println!("resolve of {} failed", of.name().to_str().unwrap());
-                            core::ptr::null()
-                        }
-                    }
-                };
+            match result {
+                Some(f) => f as _,
+                None => {
+                    //println!("resolve of {} failed", of.name().to_str().unwrap());
+                    core::ptr::null()
+                }
+            }
+        };
 
-                let backend = vk::BackendContext::new(
-                    vulkan_device.shared_instance().raw_instance().handle().as_raw() as _,
-                    vulkan_device.raw_physical_device().as_raw() as _,
-                    vulkan_device.raw_device().handle().as_raw() as _,
-                    (vulkan_queue_raw.as_raw() as _, vulkan_device.queue_family_index() as _),
-                    &get_proc,
-                );
-                skia_safe::gpu::direct_contexts::make_vulkan(&backend, None)
-            })
-        })?
+        let mut backend = vk::BackendContext::new(
+            vulkan_device.shared_instance().raw_instance().handle().as_raw() as _,
+            vulkan_device.raw_physical_device().as_raw() as _,
+            vulkan_device.raw_device().handle().as_raw() as _,
+            (vulkan_queue_raw.as_raw() as _, vulkan_device.queue_family_index() as _),
+            &get_proc,
+        );
+
+        // WGPU 27 is locked to vulkan 1.3 and skia assumes the highest vulkan API version of the physical device is chosen,
+        // causing it to ask for unsupported features/functions
+        backend.set_max_api_version(vk::Version::new(1, 3, 0));
+
+        skia_safe::gpu::direct_contexts::make_vulkan(&backend, None)
     }
 }
