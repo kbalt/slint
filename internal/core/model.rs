@@ -15,6 +15,7 @@ pub use adapters::{FilterModel, MapModel, ReverseModel, SortModel};
 use alloc::boxed::Box;
 use alloc::rc::Rc;
 use alloc::vec::Vec;
+use core::cell::Ref;
 use core::cell::{Cell, RefCell};
 use core::pin::Pin;
 use euclid::num::Zero;
@@ -439,6 +440,14 @@ impl<T: 'static> VecModel<T> {
         self.array.borrow_mut().swap(a, b);
         self.notify.row_changed(a);
         self.notify.row_changed(b);
+    }
+
+    /// Returns a slice to the content of the array
+    ///
+    /// This should only be used to look at the content of the vector,
+    /// modifications to the content (due to interior mutability) are not be tracked.
+    pub fn untracked_slice(&self) -> Ref<'_, [T]> {
+        Ref::map(self.array.borrow(), |v| v.as_slice())
     }
 }
 
