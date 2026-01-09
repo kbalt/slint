@@ -54,10 +54,17 @@ impl WGPUSurface {
                     }),
             )?;
 
+        let swapchain_capabilities = surface.get_capabilities(&adapter);
+
         let mut surface_config =
             surface.get_default_config(&adapter, size.width, size.height).unwrap();
 
-        let swapchain_capabilities = surface.get_capabilities(&adapter);
+        if swapchain_capabilities.alpha_modes.contains(&wgpu::CompositeAlphaMode::PreMultiplied) {
+            surface_config.alpha_mode = wgpu::CompositeAlphaMode::PreMultiplied;
+        } else if swapchain_capabilities.alpha_modes.contains(&wgpu::CompositeAlphaMode::Inherit) {
+            surface_config.alpha_mode = wgpu::CompositeAlphaMode::Inherit;
+        }
+
         let swapchain_format = swapchain_capabilities
             .formats
             .iter()
